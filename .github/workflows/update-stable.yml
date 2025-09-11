@@ -1,0 +1,65 @@
+# Automatically fetch and merge latest tag to mamolinux/stable for new stable releases
+name: Update mamolinux/stable branch
+
+# Controls when the action will run. 
+on:
+  schedule:
+    # Runs at 06:00 UTC, only on Saturday
+    - cron: '0 6 * * 6'
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Branch to merge to'
+        required: true
+        default: 'mamolinux/stable'
+
+jobs:
+  update_stable_branch:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write # Grants write permissions to the GITHUB_TOKEN
+    
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout repository
+        uses: actions/checkout@master
+        with:
+          fetch-depth: 0 # Fetch all branches and tags
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Get latest versioned tag
+        id: get_tag
+        run: |
+          # Fetch all tags from the remote to ensure local tags are up to date
+          git fetch --tags
+          
+          # Use git tag and grep to find tags matching the version pattern and sort them
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -E -m1 '^(v|ver)?[0-9]+\.[0-9]+\.[0-9]+$')
+          
+          # Check if a tag was found
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No versioned tags found. Exiting."
+            exit 1
+          fi
+          
+          # Set the tag as an environment variable for later use
+          echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
+          echo "Found latest versioned tag: $LATEST_TAG"
+      
+      - name: Update stable branch with latest tag
+        run: |
+          TARGET_BRANCH="${{ github.event.inputs.target_branch || 'mamolinux/stable' }}"
+          
+          # Check if the target branch is already at the latest tag commit
+          if [ "$(git rev-parse "$TARGET_BRANCH")" = "$(git rev-parse "$LATEST_TAG")" ]; then
+            echo "Target branch '$TARGET_BRANCH' is already synchronized with tag '$LATEST_TAG'. No action needed."
+            exit 0
+          fi
+
+          echo "Resetting branch '$TARGET_BRANCH' to tag '$LATEST_TAG'"
+          git checkout "$TARGET_BRANCH"
+          git reset --hard "$LATEST_TAG"
+          
+          echo "Force pushing branch '$TARGET_BRANCH' to origin"
+          git push --force origin "$TARGET_BRANCH"

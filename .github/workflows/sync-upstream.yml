@@ -1,0 +1,47 @@
+# Automatically fetch and merge upstream master branch and tags
+
+name: Sync Upstream
+on:
+  schedule:
+    # Runs at 05:00 UTC, only on Saturday
+    - cron: '0 5 * * 6'
+  
+  workflow_dispatch: # on button click
+    inputs:
+      upstream:
+        description: 'Upstream repository (eg. linuxmint/cinnamon)'
+        required: true
+        default: 'ubuntu/yaru'       # set the upstream repo
+      target_branch:
+        description: 'Branch in this repository to merge into'
+        required: true
+        default: 'master'
+
+jobs:
+  # This workflow contains a single job called "sync-upstream"
+  sync_upstream:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write # Grants write permissions to the WORKFLOW_TOKEN
+      contents: write # Grants write permissions to the GITHUB_TOKEN
+    
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@master
+        with:
+          ref: ${{ github.event.inputs.target_branch || 'master' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0 # Number of commits to fetch. 0 indicates all history for all branches and tags.
+      
+      - name: Sync with upstream and tags
+        env:
+            UPSTREAM_REPO: ${{ github.event.inputs.upstream || 'ubuntu/yaru' }}
+            TARGET_BRANCH: ${{ github.event.inputs.target_branch || 'master' }}
+            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Use gh CLI to sync the fork
+          gh repo sync "$UPSTREAM_REPO" --branch "$TARGET_BRANCH"
+          # Sync tags separately
+          git remote add upstream https://github.com/"$UPSTREAM_REPO".git
+          git fetch upstream --tags
+          git push origin --tags
